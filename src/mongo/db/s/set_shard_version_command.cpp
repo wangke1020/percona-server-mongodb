@@ -255,7 +255,8 @@ public:
                     requestedVersion.epoch() == collectionShardVersion.epoch()) {
                     if (css->getMigrationSourceManager()) {
                         auto critSecSignal =
-                            css->getMigrationSourceManager()->getMigrationCriticalSectionSignal();
+                            css->getMigrationSourceManager()->getMigrationCriticalSectionSignal(
+                                false);
                         if (critSecSignal) {
                             collLock.reset();
                             autoDb.reset();
@@ -278,7 +279,8 @@ public:
                     // to zero, which should require a reload.
                     if (css->getMigrationSourceManager()) {
                         auto critSecSignal =
-                            css->getMigrationSourceManager()->getMigrationCriticalSectionSignal();
+                            css->getMigrationSourceManager()->getMigrationCriticalSectionSignal(
+                                false);
                         if (critSecSignal) {
                             collLock.reset();
                             autoDb.reset();
