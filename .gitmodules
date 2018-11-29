@@ -3,4 +3,4 @@
 	url = https://github.com/facebook/rocksdb.git
 [submodule "mongo-rocks"]
 	path = src/mongo/db/storage/rocks
-	url = https://github.com/percona/mongo-rocks.git
+	url = https://github.com/qiniu/mongo-rocks.git

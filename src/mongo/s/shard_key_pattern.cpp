@@ -50,7 +50,7 @@ using std::vector;
 
 using pathsupport::EqualityMatches;
 
-const int ShardKeyPattern::kMaxShardKeySizeBytes = 512;
+const int ShardKeyPattern::kMaxShardKeySizeBytes = 1024;
 const unsigned int ShardKeyPattern::kMaxFlattenedInCombinations = 4000000;
 
 namespace {
