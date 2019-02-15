@@ -31,6 +31,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "mongo/base/disallow_copying.h"
 #include "mongo/db/namespace_string.h"
@@ -48,12 +49,15 @@ struct QuerySolutionNode;
 class OperationContext;
 
 // Ordered map from the max for each chunk to an entry describing the chunk
-using ChunkMap = BSONObjIndexedMap<std::shared_ptr<Chunk>>;
+using ChunkMap = std::map<std::string, std::shared_ptr<Chunk>>;
 
 // Map from a shard is to the max chunk version on that shard
 using ShardVersionMap = std::map<ShardId, ChunkVersion>;
 
-class ChunkManager {
+/**
+ * In-memory representation of the routing table for a single sharded collection.
+ */
+class ChunkManager : public std::enable_shared_from_this<ChunkManager> {
     MONGO_DISALLOW_COPYING(ChunkManager);
 
 public:
@@ -65,6 +69,35 @@ public:
                  ChunkVersion collectionVersion);
 
     ~ChunkManager();
+
+/**
+ KeyPattern shardKeyPattern,	     * Makes an instance with a routing table for
+ collection "nss", sharded on std::unique_ptr<CollatorInterface> defaultCollator,	     *
+ "shardKeyPattern". bool unique,	     * ChunkMap chunkMap,	     * "defaultCollator" is the
+ default collation for the collection, "unique" indicates whether ChunkVersion collectionVersion);
+ * or not the shard key for each document will be globally unique, and "epoch" is the globally
+ * unique identifier for this version of the collection.
+ *
+ * The "chunks" vector must contain the chunk routing information sorted in ascending order by
+ * chunk version, and adhere to the requirements of the routing table update algorithm.
+ */
+    static std::shared_ptr<ChunkManager> makeNew(NamespaceString nss,
+                                                 KeyPattern shardKeyPattern,
+                                                 std::unique_ptr<CollatorInterface> defaultCollator,
+                                                 bool unique,
+                                                 OID epoch,
+                                                 const std::vector<ChunkType>& chunks);
+
+
+     /**
+     * Constructs a new instance with a routing table updated according to the
+     * changes described in "changedChunks".
+     *
+     * The changes in "changedChunks" must be sorted in ascending order by chunk
+     * version, and adhere to the requirements of the routing table update
+     * algorithm.
+     */
+    std::shared_ptr<ChunkManager> makeUpdated(const std::vector<ChunkType>& changedChunks);
 
     /**
      * Returns an increasing number of the reload sequence number of this chunk manager.
@@ -106,6 +139,8 @@ public:
     const ShardVersionMap& shardVersions() const {
         return _chunkMapViews.shardVersions;
     }
+
+    std::string _extractKeyString(const BSONObj& shardKeyValue) const;
 
     /**
      * Given a shard key (or a prefix) that has been extracted from a document, returns the chunk
@@ -193,9 +228,16 @@ private:
 
         ChunkRange range;
         ShardId shardId;
+        std::string ksMax;
     };
 
-    using ChunkRangeMap = BSONObjIndexedMap<ShardAndChunkRange>;
+    using ChunkRangeMap = std::vector<ShardAndChunkRange>;
+
+    ChunkRangeMap::const_iterator _rangeMapUpperBound(const BSONObj& key) const;
+
+    std::pair<ChunkRangeMap::const_iterator, ChunkRangeMap::const_iterator> _overlappingRanges(
+        const BSONObj& min, const BSONObj& max, bool isMaxInclusive) const;
+
 
     /**
      * Contains different transformations of the chunk map for efficient querying
@@ -214,7 +256,9 @@ private:
     /**
      * Does a single pass over the chunkMap and constructs the ChunkMapViews object.
      */
-    static ChunkMapViews _constructChunkMapViews(const OID& epoch, const ChunkMap& chunkMap);
+    static ChunkMapViews _constructChunkMapViews(const OID& epoch,
+                                                 const ChunkMap& chunkMap,
+                                                 Ordering shardKeyOrdering);
 
     // The shard versioning mechanism hinges on keeping track of the number of times we reload
     // ChunkManagers.
@@ -225,6 +269,8 @@ private:
 
     // The key pattern used to shard the collection
     const ShardKeyPattern _shardKeyPattern;
+
+    const Ordering _shardKeyOrdering;
 
     // Default collation to use for routing data queries for this collection
     const std::unique_ptr<CollatorInterface> _defaultCollator;
