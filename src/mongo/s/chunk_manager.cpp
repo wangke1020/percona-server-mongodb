@@ -204,9 +204,10 @@ void ChunkManager::getShardIdsForRange(const BSONObj& min,
 
 bool ChunkManager::rangeOverlapsShard(const ChunkRange& range, const ShardId& shardId) const {
     const auto bounds = _overlappingRanges(range.getMin(), range.getMax(), false);
-    const auto it = std::find_if(bounds.first, bounds.second, [&shardId](const auto& scr) {
-        return scr.shardId == shardId;
-    });
+    const auto it =
+        std::find_if(bounds.first, bounds.second, [&shardId](const ShardAndChunkRange& scr) {
+            return scr.shardId == shardId;
+        });
     return it != bounds.second;
 }
 
@@ -482,12 +483,13 @@ ChunkManager::ChunkRangeMap::const_iterator ChunkManager::_rangeMapUpperBound(
         static const std::string& extract(ShardAndChunkRange&&) = delete;
     };
 
-    return std::upper_bound(_chunkMapViews.chunkRangeMap.cbegin(),
-                            _chunkMapViews.chunkRangeMap.cend(),
-                            _extractKeyString(key),
-                            [](const auto& lhs, const auto& rhs) -> bool {
-                                return Key::extract(lhs) < Key::extract(rhs);
-                            });
+    return std::upper_bound(
+        _chunkMapViews.chunkRangeMap.cbegin(),
+        _chunkMapViews.chunkRangeMap.cend(),
+        _extractKeyString(key),
+        [](const std::string& lhs, const ShardAndChunkRange& rhs) -> bool {
+            return Key::extract(lhs) < Key::extract(rhs);
+        });
 }
 
 std::pair<ChunkManager::ChunkRangeMap::const_iterator, ChunkManager::ChunkRangeMap::const_iterator>
