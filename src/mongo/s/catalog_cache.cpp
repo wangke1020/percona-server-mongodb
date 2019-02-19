@@ -81,7 +81,7 @@ std::shared_ptr<ChunkManager> refreshCollectionRoutingInfo(
     }
 
     const auto collectionAndChunks = uassertStatusOK(std::move(swCollectionAndChangedChunks));
-
+    Timer t;
     auto chunkManager = [&] {
         // If we have routing info already and it's for the same collection epoch, we're updating.
         // Otherwise, we're making a whole new routing table.
@@ -90,7 +90,8 @@ std::shared_ptr<ChunkManager> refreshCollectionRoutingInfo(
 
             return existingRoutingInfo->makeUpdated(collectionAndChunks.changedChunks);
         }
-        auto defaultCollator = [&]() -> std::unique_ptr<CollatorInterface> {
+        auto defaultCollator =
+            [&]() -> std::unique_ptr<CollatorInterface> {
             if (!collectionAndChunks.defaultCollation.isEmpty()) {
                 // The collation should have been validated upon collection creation
                 return uassertStatusOK(CollatorFactoryInterface::get(opCtx->getServiceContext())
@@ -105,12 +106,15 @@ std::shared_ptr<ChunkManager> refreshCollectionRoutingInfo(
                                      collectionAndChunks.epoch,
                                      collectionAndChunks.changedChunks);
     }();
+    log() << "get chunkManager in refreshCollectionRoutingInfo took " << t.millis() << " ms";
 
+    t.reset();
     std::set<ShardId> shardIds;
     chunkManager->getAllShardIds(&shardIds);
     for (const auto& shardId : shardIds) {
         uassertStatusOK(Grid::get(opCtx)->shardRegistry()->getShard(opCtx, shardId));
     }
+    
     return chunkManager;
 }
 
@@ -424,8 +428,10 @@ void CatalogCache::_scheduleCollectionRefresh_inlock(
             StatusWith<CatalogCacheLoader::CollectionAndChangedChunks> swCollAndChunks) noexcept {
         std::shared_ptr<ChunkManager> newRoutingInfo;
         try {
+            Timer t;
             newRoutingInfo = refreshCollectionRoutingInfo(
                 opCtx, nss, std::move(existingRoutingInfo), std::move(swCollAndChunks));
+            log() << "refreshCollectionRoutingInfo took " << t.millis() << " ms";
 
             onRefreshCompleted(Status::OK(), newRoutingInfo.get());
         } catch (const DBException& ex) {

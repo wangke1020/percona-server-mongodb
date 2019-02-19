@@ -41,6 +41,7 @@
 #include "mongo/db/query/query_planner_common.h"
 #include "mongo/db/storage/key_string.h"
 #include "mongo/util/log.h"
+#include "mongo/util/timer.h"
 
 namespace mongo {
 namespace {
@@ -376,6 +377,7 @@ std::string ChunkManager::toString() const {
 ChunkManager::ChunkMapViews ChunkManager::_constructChunkMapViews(const OID& epoch,
                                                                   const ChunkMap& chunkMap,
                                                                   Ordering shardKeyOrdering) {
+    Timer t;
     ChunkRangeMap chunkRangeMap;
     ShardVersionMap shardVersions;
     ChunkMap::const_iterator current = chunkMap.cbegin();
@@ -457,7 +459,7 @@ ChunkManager::ChunkMapViews ChunkManager::_constructChunkMapViews(const OID& epo
             invariant(SimpleBSONObjComparator::kInstance.evaluate(c1.max() == c2.min()));
         }
     }
-
+    log() << "_constructChunkMapViews tooks " << t.millis() << " ms";
     return {std::move(chunkRangeMap), std::move(shardVersions)};
 }
 
@@ -536,10 +538,12 @@ std::shared_ptr<ChunkManager> ChunkManager::makeNew(
 
 std::shared_ptr<ChunkManager> ChunkManager::makeUpdated(
     const std::vector<ChunkType>& changedChunks) {
+    Timer t;
     const auto startingCollectionVersion = getVersion();
     auto chunkMap = _chunkMap;
 
     ChunkVersion collectionVersion = startingCollectionVersion;
+    log() << "start to reload chunks  elapsed " << t.millis() << " ms";
     for (const auto& chunk : changedChunks) {
         const auto& chunkVersion = chunk.getVersion();
 
@@ -563,13 +567,17 @@ std::shared_ptr<ChunkManager> ChunkManager::makeUpdated(
         // Returns the first chunk with a max key that is > max - implies that the next chunk cannot
         // not overlap max
         const auto high = chunkMap.upper_bound(chunkMaxKeyString);
-
+        log() << "get high low bound " << t.millis() << " ms";
         // Erase all chunks from the map, which overlap the chunk we got from the persistent store
         chunkMap.erase(low, high);
 
         // Insert only the chunk itself
         chunkMap.insert(std::make_pair(chunkMaxKeyString, std::make_shared<Chunk>(chunk)));
+        log() << "replace high low bound chunks " << t.millis() << " ms";
     }
+    log() << "refresh changedChunks chunks  size " << changedChunks.size() << 
+    " in chunksmap of size " << chunkMap.size() << ", took " << t.millis()
+          << " ms";
 
     // If at least one diff was applied, the metadata is correct, but it might not have changed so
     // in this case there is no need to recreate the chunk manager.
@@ -582,12 +590,16 @@ std::shared_ptr<ChunkManager> ChunkManager::makeUpdated(
         return shared_from_this();
     }
 
-    return std::shared_ptr<ChunkManager>(
+    log() << "makeUpdated before return new ChunkManager, took " << t.millis() << " ms ";
+    auto m = std::shared_ptr<ChunkManager>(
         new ChunkManager(_nss,
-                         KeyPattern(getShardKeyPattern().getKeyPattern()),
-                         CollatorInterface::cloneCollator(getDefaultCollator()),
-                         isUnique(),
-                         std::move(chunkMap),
-                         collectionVersion));
+                            KeyPattern(getShardKeyPattern().getKeyPattern()),
+                            CollatorInterface::cloneCollator(getDefaultCollator()),
+                            isUnique(),
+                            std::move(chunkMap),
+                            collectionVersion));
+
+    log() << "makeUpdated before return, took " << t.millis() << " ms ";
+    return m;
 }
 }  // namespace mongo

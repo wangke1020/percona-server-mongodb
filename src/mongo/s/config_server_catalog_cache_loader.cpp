@@ -26,6 +26,8 @@
  *    it in the license file.
  */
 
+#define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kSharding
+
 #include "mongo/platform/basic.h"
 
 #include "mongo/s/config_server_catalog_cache_loader.h"
@@ -35,6 +37,8 @@
 #include "mongo/s/catalog/sharding_catalog_client.h"
 #include "mongo/s/grid.h"
 #include "mongo/stdx/memory.h"
+#include "mongo/util/log.h"
+#include "mongo/util/timer.h"
 
 namespace mongo {
 
@@ -150,7 +154,7 @@ std::shared_ptr<Notification<void>> ConfigServerCatalogCacheLoader::getChunksSin
 
     uassertStatusOK(_threadPool.schedule([ this, nss, version, notify, callbackFn ]() noexcept {
         auto opCtx = Client::getCurrent()->makeOperationContext();
-
+        Timer t;
         auto swCollAndChunks = [&]() -> StatusWith<CollectionAndChangedChunks> {
             try {
                 return getChangedChunks(opCtx.get(), nss, version);
@@ -159,6 +163,7 @@ std::shared_ptr<Notification<void>> ConfigServerCatalogCacheLoader::getChunksSin
             }
         }();
 
+        log() << "getChangedChunks took " << t.millis() << " ms";
         callbackFn(opCtx.get(), std::move(swCollAndChunks));
         notify->set();
     }));
